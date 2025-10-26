@@ -540,7 +540,4 @@ function clearMessages() {
 }
 
 // --- Initial Setup ---
-document.addEventListener('DOMContentLoaded', checkLoginStatus);
-
-
-this  code  is  correct  or  not  
+document.addEventListener('DOMContentLoaded', checkLoginStatus)
