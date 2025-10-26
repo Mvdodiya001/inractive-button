@@ -2,18 +2,132 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Yes/No Buttons</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>DevFusion Full Frontend Test</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; max-width: 1000px; margin: auto; background-color: #f4f7f6; color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .container h2, .container h3 { margin-top: 0; color: #075e54; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="password"], input[type="email"], input[type="url"], textarea { width: calc(100% - 20px); padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 18px; background-color: #128c7e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; margin-right: 5px; }
+        button:hover { background-color: #075e54; }
+        button.secondary { background-color: #6c757d; }
+        button.secondary:hover { background-color: #5a6268; }
+        .hidden { display: none; }
+        ul { list-style: none; padding: 0; }
+        li.project-item, li.role-item, li.app-item { background-color: #e9ecef; margin-bottom: 10px; padding: 15px; border-radius: 4px; cursor: pointer; }
+        li.project-item:hover { background-color: #dee2e6; }
+        #auth-status { margin-bottom: 15px; font-weight: bold; }
+        #error-message, #success-message { margin: 15px 0; padding: 10px; border-radius: 4px; }
+        #error-message { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; }
+        #success-message { color: #155724; background-color: #d4edda; border: 1px solid #c3e6cb; }
+        .chat-log { height: 300px; border: 1px solid #ccc; overflow-y: auto; padding: 10px; margin-bottom: 10px; background-color: #e5ddd5; }
+        .chat-input { display: flex; }
+        .chat-input input { flex-grow: 1; margin-right: 5px; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <h1 id="question">Are you married?</h1>
-        <div class="buttons">
-            <button id="yes">Yes</button>
-            <button id="no">No</button>
+
+    <h1>DevFusion Full Frontend Test</h1>
+    <div id="auth-status">Status: Checking...</div>
+    <div id="error-message" class="hidden"></div>
+    <div id="success-message" class="hidden"></div>
+    <button id="logout-button" class="hidden secondary" onclick="logout()">Logout</button>
+
+    <div id="auth-section" class="container hidden">
+        <div id="login-form">
+            <h2>Login</h2>
+            <div class="form-group"><label for="login-username">Username:</label><input type="text" id="login-username"></div>
+            <div class="form-group"><label for="login-password">Password:</label><input type="password" id="login-password"></div>
+            <button onclick="login()">Login</button>
+            <button class="secondary" onclick="showRegisterForm()">Need to register?</button>
+        </div>
+        <div id="register-form" class="hidden">
+            <h2>Register</h2>
+            <div class="form-group"><label for="reg-username">Username:</label><input type="text" id="reg-username"></div>
+            <div class="form-group"><label for="reg-email">College Email (.edu):</label><input type="email" id="reg-email"></div>
+            <div class="form-group"><label for="reg-college">College Name:</label><input type="text" id="reg-college"></div>
+            <div class="form-group"><label for="reg-password">Password:</label><input type="password" id="reg-password"></div>
+            <div class="form-group"><label for="reg-password2">Confirm Password:</label><input type="password" id="reg-password2"></div>
+            <button onclick="register()">Register</button>
+            <button class="secondary" onclick="showLoginForm()">Already registered?</button>
         </div>
     </div>
-    <script src="script.js"></script>
+
+    <div id="main-content" class="hidden">
+        <div id="profile-section" class="container">
+            <h2>My Profile</h2>
+            <div id="profile-details">Loading...</div>
+            <button onclick="showProfileEditForm()">Edit Profile</button>
+            <div id="profile-edit-form" class="hidden" style="margin-top: 15px;">
+                <div class="form-group"><label for="edit-github">GitHub Profile URL:</label><input type="url" id="edit-github"></div>
+                <div class="form-group"><label for="edit-skills">Skills:</label><textarea id="edit-skills" rows="3"></textarea></div>
+                <button onclick="updateProfile()">Save Changes</button>
+                <button class="secondary" onclick="hideProfileEditForm()">Cancel</button>
+            </div>
+        </div>
+
+        <div id="project-list-section" class="container">
+            <h2>Projects</h2>
+            <div style="margin-bottom: 10px;">
+                <input type="text" id="project-search" placeholder="Search title/description...">
+                <select id="project-status-filter">
+                    <option value="">All Statuses</option>
+                    <option value="OPEN">Open</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="COMPLETED">Completed</option>
+                </select>
+                <input type="text" id="project-college-filter" placeholder="Filter by leader's college...">
+                <button onclick="fetchProjects()">Filter/Search</button>
+            </div>
+            <ul id="projects-ul">Loading...</ul>
+            <button onclick="showCreateProjectForm()">Create New Project</button>
+        </div>
+
+         <div id="create-project-form" class="container hidden">
+             <h2>Create New Project</h2>
+             <p>Provide EITHER a GitHub link OR a Title/Description.</p>
+             <div class="form-group"><label for="new-github">GitHub Repo Link (e.g., https://github.com/user/repo):</label><input type="url" id="new-github"></div>
+             <hr>
+             <div class="form-group"><label for="new-title">Title:</label><input type="text" id="new-title"></div>
+             <div class="form-group"><label for="new-description">Description:</label><textarea id="new-description" rows="3"></textarea></div>
+             <button onclick="createProject()">Create Project</button>
+             <button class="secondary" onclick="hideCreateProjectForm()">Cancel</button>
+         </div>
+
+        <div id="project-detail-section" class="container hidden">
+            <button onclick="showProjectList()">← Back to Projects</button>
+            <h2 id="project-detail-title">Project Details</h2>
+            <div id="project-detail-content">Loading...</div>
+            <div id="project-actions" class="hidden" style="margin-top:15px;">
+                <h3>Leader Actions</h3>
+                <button onclick="showAddRoleForm()">Add New Role</button>
+                <div id="add-role-form" class="hidden" style="margin-top: 10px;">
+                    <div class="form-group"><label for="new-role-name">Role Name:</label><input type="text" id="new-role-name"></div>
+                    <div class="form-group"><label for="new-role-skills">Required Skills:</label><textarea id="new-role-skills" rows="2"></textarea></div>
+                    <button onclick="addRole()">Add Role</button>
+                    <button class="secondary" onclick="hideAddRoleForm()">Cancel</button>
+                </div>
+            </div>
+            <div id="project-roles"><h3>Roles</h3><ul id="roles-ul"></ul></div>
+            <div id="project-team"><h3>Team Members</h3><ul id="team-ul"></ul></div>
+            <div id="project-applications" class="hidden"><h3>Applications</h3><ul id="applications-ul"></ul></div>
+             <button id="chat-link-button" class="secondary" style="margin-top: 15px;" onclick="goToChat()">Go to Project Chat</button>
+        </div>
+
+        <div id="my-applications-section" class="container">
+            <h2>My Applications</h2>
+            <button onclick="fetchMyApplications()">Refresh My Applications</button>
+            <ul id="my-applications-ul">Loading...</ul>
+        </div>
+
+        <div id="chat-hub-section" class="container">
+             <h2>Chat Hub</h2>
+             <a href="http://127.0.0.1:8000/api/chat/" target="_blank">Open Chat Hub Page</a>
+             <p>(This opens the Django-rendered chat hub page in a new tab)</p>
+        </div>
+
+    </div> <script src="app.js"></script>
 </body>
 </html>
