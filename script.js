@@ -1,6 +1,6 @@
 // app.js
 
-const API_BASE_URL = 'https://jennine-unaccomplished-preelectrically.ngrok-free.dev/api/';
+const API_BASE_URL = 'https://jennine-unaccomplished-preelectrically.ngrok-free.dev/api';
 let accessToken = null;
 let refreshToken = null;
 let currentUser = null;
@@ -529,4 +529,5 @@ function clearMessages() {
 
 // --- Initial Setup ---
 document.addEventListener('DOMContentLoaded', checkLoginStatus);
+
 
