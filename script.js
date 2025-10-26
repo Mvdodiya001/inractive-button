@@ -1,12 +1,15 @@
-// app.js
+// script.js (Final Version for GitHub Pages + ngrok)
 
 const API_BASE_URL = 'https://jennine-unaccomplished-preelectrically.ngrok-free.dev/api';
+
+
 let accessToken = null;
 let refreshToken = null;
 let currentUser = null;
 let currentProjectId = null;
+let chatSocket = null; 
 
-// DOM Elements (Keep all your existing element variables here)
+// DOM Elements
 const authStatusDiv = document.getElementById('auth-status');
 const errorDiv = document.getElementById('error-message');
 const successDiv = document.getElementById('success-message');
@@ -36,224 +39,153 @@ const chatLinkButton = document.getElementById('chat-link-button');
 
 // --- API Helper ---
 function buildFullUrl(endpoint) {
-    // Normalize base and endpoint to avoid double slashes
-    const base = API_BASE_URL.replace(/\/+$/, '');     // remove trailing slashes from base
-    const path = (endpoint || '').replace(/^\/+/, ''); // remove leading slashes from endpoint
-    return `${base}/${path}`;
+    const base = API_BASE_URL.replace(/\/+$/, '');
+    const path = (endpoint || '').replace(/^\/+/, '');
+    return `${base}/${path}`;
 }
 
 async function apiRequest(url, method = 'GET', body = null, requiresAuth = true) {
-    const headers = { 'Content-Type': 'application/json' };
-    let currentToken = localStorage.getItem('accessToken'); // Get token from storage
+    const headers = { 'Content-Type': 'application/json' };
+    let currentToken = localStorage.getItem('accessToken');
 
-    if (requiresAuth) {
-        if (!currentToken) {
-            showError("Authentication required. Please log in.");
-            logout(); // Force logout if no token
-            throw new Error("Not authenticated");
-        }
-        headers['Authorization'] = `Bearer ${currentToken}`;
-    }
+    if (requiresAuth) {
+        if (!currentToken) {
+            showError("Authentication required. Please log in.");
+            logout();
+            throw new Error("Not authenticated");
+        }
+        headers['Authorization'] = `Bearer ${currentToken}`;
+    }
 
-    const options = { method, headers };
-    if (body) {
-        options.body = JSON.stringify(body);
-    }
+    const options = { method, headers };
+    if (body) {
+        options.body = JSON.stringify(body);
+    }
 
-    const fullUrl = buildFullUrl(url);
+    const fullUrl = buildFullUrl(url); // Use helper
 
-    try {
-        let response = await fetch(fullUrl, options);
+    try {
+        console.log(`Making ${method} request to: ${fullUrl}`);
+        let response = await fetch(fullUrl, options);
 
-        // Handle expired token and try to refresh ONLY if auth was required
-        if (response.status === 401 && requiresAuth) {
-            let currentRefreshToken = localStorage.getItem('refreshToken');
-            if (currentRefreshToken) {
-                console.log("Access token expired, attempting refresh...");
-                const refreshed = await tryRefreshToken(currentRefreshToken); // Pass refresh token
-                if (refreshed) {
-                    // Update header with the NEW access token for the retry
-                    currentToken = localStorage.getItem('accessToken'); // Get the newly stored token
-                    headers['Authorization'] = `Bearer ${currentToken}`;
-                    // Rebuild options (update headers) and retry the request
-                    const retryOptions = { method, headers };
-                    if (body) retryOptions.body = JSON.stringify(body);
-                    response = await fetch(fullUrl, retryOptions); // Retry original request
-                } else {
-                    showError("Session expired. Please log in again.");
-                    logout();
-                    throw new Error("Token refresh failed");
-                }
-            } else {
-                 showError("Session expired. Please log in again.");
-                 logout();
-                 throw new Error("No refresh token available");
-            }
-        }
+        if (response.status === 401 && requiresAuth) {
+            let currentRefreshToken = localStorage.getItem('refreshToken');
+            if (currentRefreshToken) {
+                console.log("Access token expired or invalid, attempting refresh...");
+                const refreshed = await tryRefreshToken(currentRefreshToken);
+                if (refreshed) {
+                    currentToken = localStorage.getItem('accessToken');
+                    headers['Authorization'] = `Bearer ${currentToken}`;
+                    const retryOptions = { method, headers };
+                    if (body) retryOptions.body = JSON.stringify(body);
+                    console.log(`Retrying ${method} request to: ${fullUrl}`);
+                    response = await fetch(fullUrl, retryOptions);
+                } else {
+                    showError("Session expired. Please log in again.");
+                    logout(); throw new Error("Token refresh failed");
+                }
+            } else {
+                 showError("Session expired (no refresh token). Please log in again.");
+                 logout(); throw new Error("No refresh token available");
+            }
+        }
 
-        if (!response.ok) {
-            // Try to parse error json, provide fallback message
-            const errorData = await response.json().catch(() => ({ detail: `HTTP Error: ${response.status} ${response.statusText}` }));
-            console.error("API Error Response:", errorData);
-            // Use detail if available (DRF standard), fallback to error or generic message
-            throw new Error(errorData.detail || errorData.error || `Request failed: ${response.statusText}`);
-        }
+        if (!response.ok) {
+            let errorData;
+            try { errorData = await response.json(); }
+            catch (e) { errorData = { detail: `HTTP Error: ${response.status} ${response.statusText}` }; }
+            console.error("API Error Response:", errorData);
+            throw new Error(errorData.detail || errorData.error || `Request failed: ${response.statusText}`);
+        }
 
-         // Handle responses that might not have content (like 204 No Content from DELETE)
-         if (response.status === 204) {
-             return null; // Explicitly return null for No Content
-         }
-         const contentType = response.headers.get("content-type");
-         if (contentType && contentType.includes("application/json")) {
-             return await response.json(); // Only parse JSON if header indicates it
-         } else {
-             return await response.text(); // Return text for non-JSON responses
-         }
+        if (response.status === 204) { return null; }
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+            return await response.json();
+        } else {
+            return await response.text();
+        }
 
-    } catch (error) {
-        // Avoid showing duplicate errors if already handled
-        if (!errorDiv.textContent.includes(error.message)) {
-            showError(`API Request Failed: ${error.message}`);
-        }
-        console.error('API Request Error:', error);
-        throw error; // Re-throw
-    }
+    } catch (error) {
+        if (!errorDiv.textContent.includes(error.message)) { showError(`API Request Failed: ${error.message}`); }
+        console.error('API Request Error during fetch:', error);
+        throw error;
+    }
 }
 
-
-// --- Authentication ---
+// --- Authentication --- (login, register, tryRefreshToken, fetchUserProfile, logout, checkLoginStatus functions remain the same)
 async function login() {
-    clearMessages();
-    const username = document.getElementById('login-username').value;
-    const password = document.getElementById('login-password').value;
-    try {
-        // Login request doesn't require auth
-        const data = await apiRequest('/token/', 'POST', { username, password }, false);
-        accessToken = data.access; // Store in global variable (optional, localStorage is primary)
-        refreshToken = data.refresh;
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', refreshToken);
-        await fetchUserProfile(); // Fetch user info immediately
-        showSuccess("Login successful!");
-    } catch (error) { /* Error should be shown by apiRequest */ }
+    clearMessages();
+    const username = document.getElementById('login-username').value;
+    const password = document.getElementById('login-password').value;
+    if (!username || !password) { showError("Username and Password required."); return; }
+    try {
+        const data = await apiRequest('token/', 'POST', { username, password }, false);
+        accessToken = data.access; refreshToken = data.refresh;
+        localStorage.setItem('accessToken', accessToken); localStorage.setItem('refreshToken', refreshToken);
+        await fetchUserProfile();
+        showSuccess("Login successful!");
+    } catch (error) { /* Handled */ }
 }
-
 async function register() {
-    clearMessages();
-    const username = document.getElementById('reg-username').value;
-    const email = document.getElementById('reg-email').value;
-    const college = document.getElementById('reg-college').value;
-    const password = document.getElementById('reg-password').value;
-    const password2 = document.getElementById('reg-password2').value;
-
-    if (!username || !email || !college || !password) {
-        showError("All fields are required for registration."); return;
-    }
-    if (password !== password2) { showError("Passwords do not match."); return; }
-
-    try {
-        // Register request doesn't require auth
-        await apiRequest('/register/', 'POST', {
-            username: username, college_email: email, college_name: college,
-            password: password, password2: password2
-        }, false);
-        showSuccess("Registration successful! Please log in.");
-        showLoginForm(); // Switch back to login form
-    } catch (error) { /* Error shown by apiRequest */ }
+    clearMessages();
+    const username = document.getElementById('reg-username').value;
+    const email = document.getElementById('reg-email').value;
+    const college = document.getElementById('reg-college').value;
+    const password = document.getElementById('reg-password').value;
+    const password2 = document.getElementById('reg-password2').value;
+    if (!username || !email || !college || !password) { showError("All fields required."); return; }
+    if (password !== password2) { showError("Passwords do not match."); return; }
+    try {
+        await apiRequest('register/', 'POST', { username, college_email: email, college_name: college, password, password2 }, false);
+        showSuccess("Registration successful! Please log in."); showLoginForm();
+    } catch (error) { /* Handled */ }
 }
-
 async function tryRefreshToken(tokenToRefresh) {
-    if (!tokenToRefresh) return false;
-    try {
-        // Refresh request doesn't require auth itself, uses the refresh token in body
-        const data = await apiRequest('/token/refresh/', 'POST', { refresh: tokenToRefresh }, false);
-        accessToken = data.access; // Update global var (optional)
-        localStorage.setItem('accessToken', accessToken); // Update stored access token
-        console.log("Token refreshed successfully.");
-        return true;
-    } catch (error) {
-        console.error("Failed to refresh token:", error);
-        return false; // Indicates refresh failed
-    }
+    if (!tokenToRefresh) return false;
+    try {
+        const data = await apiRequest('token/refresh/', 'POST', { refresh: tokenToRefresh }, false);
+        accessToken = data.access; localStorage.setItem('accessToken', accessToken);
+        console.log("Token refreshed successfully."); return true;
+    } catch (error) { console.error("Failed to refresh token:", error); return false; }
 }
-
 async function fetchUserProfile() {
-    try {
-        // Profile request requires auth
-        const user = await apiRequest('/me/', 'GET');
-        currentUser = user; // Store user data globally
-        authStatusDiv.textContent = `Status: Logged in as ${user.username}`;
-        logoutButton.classList.remove('hidden');
-        authSection.classList.add('hidden');
-        mainContent.classList.remove('hidden');
-        displayUserProfile(user);
-        // Load initial data now that we know the user
-        fetchProjects();
-        fetchMyApplications();
-    } catch (error) {
-        // If fetching profile fails (e.g., invalid/expired token after refresh failed), log out
-        console.error("Failed to fetch user profile, logging out.", error);
-        logout();
-    }
+    try {
+        const user = await apiRequest('me/', 'GET');
+        if (!user || typeof user !== 'object') { throw new Error("Invalid user data from /me/"); }
+        currentUser = user; authStatusDiv.textContent = `Status: Logged in as ${user.username || 'user'}`;
+        logoutButton.classList.remove('hidden'); authSection.classList.add('hidden'); mainContent.classList.remove('hidden');
+        displayUserProfile(user); fetchProjects(); fetchMyApplications();
+    } catch (error) { console.error("Fetch profile failed, logging out.", error); logout(); }
 }
-
 function logout() {
-    accessToken = null; refreshToken = null; currentUser = null; currentProjectId = null;
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    authStatusDiv.textContent = 'Status: Not logged in';
-    logoutButton.classList.add('hidden');
-    authSection.classList.remove('hidden'); // Show login/register
-    mainContent.classList.add('hidden'); // Hide main content
-    showLoginForm(); // Default to login form
-    clearMessages();
-    // Close WebSocket if it's open
-    if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
-        chatSocket.close();
-    }
-    chatSocket = null;
-    console.log("User logged out.");
+    if (chatSocket && chatSocket.readyState === WebSocket.OPEN) { chatSocket.close(); } chatSocket = null;
+    accessToken = null; refreshToken = null; currentUser = null; currentProjectId = null;
+    localStorage.removeItem('accessToken'); localStorage.removeItem('refreshToken');
+    authStatusDiv.textContent = 'Status: Not logged in'; logoutButton.classList.add('hidden');
+    authSection.classList.remove('hidden'); mainContent.classList.add('hidden');
+    showLoginForm(); clearMessages(); console.log("User logged out.");
 }
-
 function checkLoginStatus() {
-    // Check for tokens on initial load
-    accessToken = localStorage.getItem('accessToken');
-    refreshToken = localStorage.getItem('refreshToken');
-    if (accessToken && refreshToken) {
-        console.log("Tokens found, attempting to fetch user profile...");
-        fetchUserProfile(); // Verify tokens by fetching profile
-    } else {
-        console.log("No tokens found, showing login form.");
-        logout(); // Ensure clean logged-out state
-    }
+    accessToken = localStorage.getItem('accessToken'); refreshToken = localStorage.getItem('refreshToken');
+    if (accessToken && refreshToken) { console.log("Tokens found, fetching profile..."); fetchUserProfile(); }
+    else { console.log("No tokens, ensuring logout state."); logout(); }
 }
 
-// --- Profile ---
+// --- Profile --- (displayUserProfile, updateProfile functions remain the same)
 function displayUserProfile(user) {
-    profileDetailsDiv.innerHTML = `
-        <p><strong>Username:</strong> ${user.username}</p>
-        <p><strong>Email:</strong> ${user.college_email}</p>
-        <p><strong>College:</strong> ${user.college_name}</p>
-        <p><strong>GitHub:</strong> ${user.github_profile || 'Not set'}</p>
-        <p><strong>Skills:</strong> ${user.skills || 'Not set'}</p>
-    `;
-    // Pre-fill edit form
-    document.getElementById('edit-github').value = user.github_profile || '';
-    document.getElementById('edit-skills').value = user.skills || '';
+    profileDetailsDiv.innerHTML = `<p><strong>Username:</strong> ${user.username || 'N/A'}</p><p><strong>Email:</strong> ${user.college_email || 'N/A'}</p><p><strong>College:</strong> ${user.college_name || 'N/A'}</p><p><strong>GitHub:</strong> ${user.github_profile || 'Not set'}</p><p><strong>Skills:</strong> ${user.skills || 'Not set'}</p>`;
+    document.getElementById('edit-github').value = user.github_profile || '';
+    document.getElementById('edit-skills').value = user.skills || '';
+}
+async function updateProfile() {
+    clearMessages(); const github = document.getElementById('edit-github').value; const skills = document.getElementById('edit-skills').value;
+    try {
+        const updatedUser = await apiRequest('me/', 'PATCH', { github_profile: github, skills: skills });
+        currentUser = updatedUser; displayUserProfile(updatedUser); hideProfileEditForm(); showSuccess("Profile updated!");
+    } catch (error) { /* Handled */ }
 }
 
-async function updateProfile() {
-    clearMessages();
-    const github = document.getElementById('edit-github').value;
-    const skills = document.getElementById('edit-skills').value;
-    try {
-        const updatedUser = await apiRequest('/me/', 'PATCH', { github_profile: github, skills: skills });
-        currentUser = updatedUser;
-        displayUserProfile(updatedUser);
-        hideProfileEditForm();
-        showSuccess("Profile updated successfully!");
-    } catch (error) { /* Error shown by apiRequest */ }
-}
 
 // --- Projects ---
 async function fetchProjects() {
@@ -496,19 +428,18 @@ async function rejectApplication(projectId, roleId, applicationId) {
 
 // --- Chat ---
 function goToChat() {
-    if (currentProjectId) {
-        const currentToken = localStorage.getItem('accessToken');
-        if (currentToken) {
-            const chatUrl = `http://127.0.0.1:8000/api/chat/${currentProjectId}/?token=${currentToken}`;
-            console.log("Opening chat URL:", chatUrl);
-            window.open(chatUrl, '_blank'); 
-        } else {
-            showError("Cannot open chat. Access token not found. Please log in again.");
-            logout();
-        }
-    } else {
-        showError("No project selected to open chat for.");
-    }
+    if (currentProjectId) {
+        const currentToken = localStorage.getItem('accessToken');
+        if (currentToken) {
+            // Use the ngrok backend URL for the base, keep /api/chat path
+            const chatBackendBaseUrl = API_BASE_URL.replace('/api', ''); // Get base ngrok URL
+            const chatUrl = `${chatBackendBaseUrl}/api/chat/${currentProjectId}/?token=${currentToken}`;
+            console.log("Opening chat URL:", chatUrl);
+            window.open(chatUrl, '_blank');
+        } else {
+            showError("Cannot open chat. Token not found. Log in again."); logout();
+        }
+    } else { showError("No project selected."); }
 }
 
 // --- UI Helpers ---
